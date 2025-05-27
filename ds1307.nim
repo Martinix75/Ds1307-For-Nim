@@ -5,7 +5,7 @@ import picostdlib/hardware/[i2c]
 from std/strformat import fmt
 from std/strutils import parseInt, split
 
-let ds1307Ver = "0.6.0" #sovvracarico su setTime() setDate().
+let ds1307Ver = "0.6.1" #sovvracarico su setTime() setDate().
 
 type
   Ds1307* = object #creazione oggetto (nello stack).
@@ -19,7 +19,7 @@ type
     AM, PM
     
 # ----- Prototype Procedures ---------
-proc initDs1307*(blok: ptr I2cInst; addrDc: uint8 = 0x68): Ds1307
+proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68; autoEnable: bool=false): Ds1307 
 proc isEnable*(self: Ds1307): bool
 proc getFormat*(self: var Ds1307): HFormat
 proc getTime*(self: var Ds1307): string
@@ -51,12 +51,12 @@ proc writeData(self: var Ds1307)
 # ----- END Prototype Procedures -----
 
 # ----- Public Procedures ------------
-proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68): Ds1307 =
+proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68; autoEnable: bool=false): Ds1307 = #ver06.1 aggiunto auto enable per partenza con dati.
   result = Ds1307(blokk: blok, ds1307addr: addrDc.I2cAddress)
   result.readRegisters(0x00, 7)
-  if (result.rawArrayData[0] and 0x80) == 0x80:
+  if (result.rawArrayData[0] and 0x80) == 0x80 and autoEnable == true:
     echo("Abilito!!")
-  result.setEnable(true)
+    result.setEnable(true)
 
 proc isEnable*(self: Ds1307): bool = #ritorna true = enable (conta) fale = disable (non conta).
   if self.rawArrayData[1] shr 7 == 0:
@@ -275,7 +275,7 @@ when isMainModule:
   sleepMs(1500)
   echo("Inizializzo DS1307...")
   echo(fmt"----------> Version Lib = {ds1307Ver} <----------")
-  var ds = initDs1307(blk)
+  var ds = initDs1307(blk, autoEnable=true)
   ds.setTime(11,58,12, H12, AM)
   ds.setDate(1,5,11,25)
   #ds.setTime("12:14:33")
