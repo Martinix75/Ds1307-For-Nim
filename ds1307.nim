@@ -1,9 +1,11 @@
 import picostdlib
 import picostdlib/pico/[stdio]
 import picostdlib/hardware/[i2c]
-import std/[strformat]
+#import std/[strformat]
+from std/strformat import fmt
+from std/strutils import parseInt, split
 
-let ds1307Ver = "0.5.1" #scrittura di default in un solo colpo dei dati (set).
+let ds1307Ver = "0.6.0" #sovvracarico su setTime() setDate().
 
 type
   Ds1307* = object #creazione oggetto (nello stack).
@@ -31,11 +33,13 @@ proc getMonthDay*(self: var Ds1307): uint8
 proc getMonth*(self: var Ds1307): uint8
 proc getYear*(self: var Ds1307): uint8
 
+proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0; format: HFormat=H24; amPm:HMode=AM; dw: bool= false)
+proc setTime*(self: var Ds1307; time: string; dw: bool= false)
+proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1; year: uint8=75; dw: bool= false)
+proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false)
+proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false)
 proc setFormat*(self: var Ds1307; format: HFormat=H24; dw: bool= false)
 proc setEnable*(self: var Ds1307; enable: bool=true; dw: bool= false)
-proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0; format: HFormat=H24; amPm:HMode=AM; dw: bool= false)
-proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false)
-proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1; year: uint8=75; dw: bool= false)
 proc setValues*(self: var Ds1307)
 # ++++++++++++++++++++++++++++++++++++
 #proc readRegisters(self: Ds1307) {.inline.}
@@ -89,7 +93,7 @@ proc getDate*(self: var Ds1307): string =
     date = self.bcdToUint8(self.rawArrayData[5])
     month = self.bcdToUint8(self.rawArrayData[6])
     year = self.bcdToUint8(self.rawArrayData[7])
-  result = fmt "{day:02}/{date:02}/{month:02}/{year:02}"
+  result = fmt "{day:02}  {date:02}/{month:02}/{year:02}"
 
 proc getSeconds*(self: var Ds1307): uint8 = #ritorna i secondi (numerico) ver0.2.0.
   self.readRegisters(0x00, 1) #legge il primo registro 0x00 e solo quello (1).
@@ -112,9 +116,9 @@ proc getHours*(self: var Ds1307): uint8 = #ritorna le ore (numero) ver0.2.0.
 proc getPmAm*(self: var Ds1307): HMode = #ritorna se AM = 0 Pm = 1 (da valutare se tenere cosi)ver0.2.0.
   self.readRegisters(0x02, 1)
   if ((self.rawArrayData[3] and 0x20) shr 5) == 0:
-    result = PM #prima era AM ora PM ver0.5.0.
+    result = AM #ver0.5.0. reinvertio AM <-->Pm errore in set.
   elif ((self.rawArrayData[3] and 0x20) shr 5) == 1:
-    result = AM #prima era PM ora AM ver0.5.0.
+    result = PM #ver0.5.0. reinvertio AM <-->Pm errore in set.
 
 proc getDay*(self: var Ds1307): uint8 = #ritorna il giorno della settimana (1..7) ver0.2.0.
   self.readRegisters(0x03, 1)
@@ -138,6 +142,60 @@ proc getYear*(self: var Ds1307): uint8 = #ritorna le ultime 2 cifre dell'anno (0
   
 # ----- END Get Values in Register ---------
 # ----- Set Values in Register ---------
+proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0; format: HFormat=H24; amPm:HMode=AM; dw: bool= false) = #setta l'orario riscritta ver0.5.0.
+  #self.setFormat(format)
+  self.rawArrayData[1] = self.uint8ToBCD(seconds) and 0x7F #secondi
+  self.rawArrayData[2] = self.uint8ToBCD(minutes) #minuti
+  if format == H24: #se è mod 24 ore...
+    self.rawArrayData[3] = self.uint8ToBCD(hours) #scrivi l'ora in BCD nell'array
+    self.setFormat(format) #imposta il formato AM/PM bit6
+    #self.setAmPm(amPm) #in questo caso il 5bit serve a dire se è Pm o  Am e va settato (non usato x l'ora).
+  elif format == H12: #se è in modalita 12 ore...
+    self.rawArrayData[3] = self.uint8ToBCD(hours)#scrivi l'ora in BCD nell'array
+    self.setFormat(format)#imposta il formato AM/PM bit6
+    self.setAmPm(amPm) #in questo caso il 5bit serve a dire se è Pm o  Am e va settato (non usato x l'ora).
+  if dw == true:
+    self.writeData()
+
+proc setTime*(self: var Ds1307; time: string; dw: bool= false) = #prende una stringa in formato time (hh:mm::ss).
+  var amPm: Hmode
+  let
+    timeSplit = time.split(":")
+    hours = uint8(parseInt(timeSplit[0]))
+    minutes = uint8(parseInt(timeSplit[1]))
+    seconds = uint8(parseInt(timeSplit[2]))
+  self.setTime(hours, minutes, seconds, H24, AM, dw)
+
+proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1; year: uint8=75; dw: bool= false) = #imposta data.
+  #self.rawArrayData[0] = self.uint8ToBCD(0.uint8) #vuoto
+  #self.rawArrayData[1] = self.rawArrayData[1]
+  #self.rawArrayData[2] = self.rawArrayData[2]
+  #self.rawArrayData[3] = self.rawArrayData[3]
+  self.rawArrayData[4] = self.uint8ToBCD(weekDay) #giorno settimana
+  self.rawArrayData[5] = self.uint8ToBCD(monthDay) #giorno del mese
+  self.rawArrayData[6] = self.uint8ToBCD(month) #mese
+  self.rawArrayData[7] = self.uint8ToBCD(year) #anno
+  if dw == true:
+    self.writeData()
+
+proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false) = #prende uan stringa in formato data (dd-mm-yyyy).
+  let 
+    dateSplit = date.split("-")
+    year = uint8(parseint(dateSplit[0][2..3]))
+    month = uint8(parseInt(dateSplit[1]))
+    monthDay = uint8(parseInt(dateSplit[2]))
+  self.setDate(weekDay, monthDay, month, year, dw)
+
+proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false) =
+  if amPm == PM: #ver060. invertiti AM <-->PM.
+    echo("set PMAM : PM")
+    self.rawArrayData[3] = self.rawArrayData[3] or 0x20 #setta AM, a 1  bit5.
+  elif amPm == AM: #ver060. invertiti AM <-->PM.
+    echo("set PMAM : AM")
+    self.rawArrayData[3] = self.rawArrayData[3] and 0x5F #setta PM a 0 bit5.
+  if dw == true:
+    self.writeData()
+    
 proc setFormat*(self: var Ds1307; format: HFormat=H24; dw: bool= false) = #seleziona il formato 12/24 ver040.
   if format == H12:
     self.rawArrayData[3] = self.rawArrayData[3] or 0x40 #corretto mette alto bit6.
@@ -156,28 +214,6 @@ proc setEnable*(self: var Ds1307; enable: bool=true; dw: bool= false) =  #cambio
     self.writeData()
     #self.writeRegisters(0x00, 1) 
 
-proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0; format: HFormat=H24; amPm:HMode=AM; dw: bool= false) = #setta l'orario riscritta ver0.5.0.
-  #self.setFormat(format)
-  self.rawArrayData[1] = self.uint8ToBCD(seconds) and 0x7F #secondi
-  self.rawArrayData[2] = self.uint8ToBCD(minutes) #minuti
-  if format == H24: #se è mod 24 ore...
-    self.rawArrayData[3] = self.uint8ToBCD(hours) #scrivi l'ora in BCD nell'array
-    self.setFormat(format) #imposta il formato AM/PM bit6
-  elif format == H12: #se è in modalita 12 ore...
-    self.rawArrayData[3] = self.uint8ToBCD(hours)#scrivi l'ora in BCD nell'array
-    self.setFormat(format)#imposta il formato AM/PM bit6
-    self.setAmPm(amPm) #in questo caso il 5bit serve a dire se è Pm o  Am e va settato (non usato x l'ora).
-  if dw == true:
-    self.writeData()
-
-proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false) =
-  if amPm == AM:
-    self.rawArrayData[3] = self.rawArrayData[3] or 0x20 #setta AM, a 1  bit5.
-  elif amPm == PM:
-    self.rawArrayData[3] = self.rawArrayData[3] and 0x5F #setta PM a 0 bit5.
-  if dw == true:
-    self.writeData()
-  
 #[proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0; amPm:HMode=AM) = #setta l'orario
   #self.rawArrayData[0] = self.uint8ToBCD(0.uint8) #vuoto
   self.rawArrayData[1] = self.uint8ToBCD(seconds) and 0x7F #secondi
@@ -190,18 +226,6 @@ proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false) =
   self.writeData()
   #self.writeRegisters(0x00, 4)]#
 
-proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1; year: uint8=75; dw: bool= false) = #imposta data.
-  #self.rawArrayData[0] = self.uint8ToBCD(0.uint8) #vuoto
-  #self.rawArrayData[1] = self.rawArrayData[1]
-  #self.rawArrayData[2] = self.rawArrayData[2]
-  #self.rawArrayData[3] = self.rawArrayData[3]
-  self.rawArrayData[4] = self.uint8ToBCD(weekDay) #giorno settimana
-  self.rawArrayData[5] = self.uint8ToBCD(monthDay) #giorno del mese
-  self.rawArrayData[6] = self.uint8ToBCD(month) #mese
-  self.rawArrayData[7] = self.uint8ToBCD(year) #anno
-  if dw == true:
-    self.writeData()
-    
 proc setValues*(self: var Ds1307) = #alias per la scrittura ma pubblica.
   self.writeData()
 
@@ -254,6 +278,8 @@ when isMainModule:
   var ds = initDs1307(blk)
   ds.setTime(11,58,12, H12, AM)
   ds.setDate(1,5,11,25)
+  #ds.setTime("12:14:33")
+  #ds.setDate("2025-05-27", 2)
   ds.setValues()
   #ds.setFormat(H24)
   echo("Raw Reg Init --> ", ds.rawArrayData)
