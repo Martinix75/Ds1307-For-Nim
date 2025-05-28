@@ -1,11 +1,9 @@
-import picostdlib
-import picostdlib/pico/[stdio]
 import picostdlib/hardware/[i2c]
 #import std/[strformat]
 from std/strformat import fmt
 from std/strutils import parseInt, split
 
-let ds1307Ver = "0.6.1" #sovvracarico su setTime() setDate().
+let ds1307Ver = "0.6.2" #sovvracarico su setTime() setDate().
 
 type
   Ds1307* = object #creazione oggetto (nello stack).
@@ -23,7 +21,8 @@ proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68; autoEnable: bool=false):
 proc isEnable*(self: Ds1307): bool
 proc getFormat*(self: var Ds1307): HFormat
 proc getTime*(self: var Ds1307): string
-proc getDate*(self: var Ds1307): string
+proc getDate*(self: var Ds1307; showDay: bool=true): string
+#proc getDate*(self: var Ds1307): string
 proc getSeconds*(self: var Ds1307): uint8
 proc getMinutes*(self: var Ds1307): uint8
 proc getHours*(self:var Ds1307): uint8
@@ -37,6 +36,7 @@ proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0
 proc setTime*(self: var Ds1307; time: string; dw: bool= false)
 proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1; year: uint8=75; dw: bool= false)
 proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false)
+proc setTimeData*(self: var Ds1307; str: string; dw: bool=false)
 proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false)
 proc setFormat*(self: var Ds1307; format: HFormat=H24; dw: bool= false)
 proc setEnable*(self: var Ds1307; enable: bool=true; dw: bool= false)
@@ -51,7 +51,7 @@ proc writeData(self: var Ds1307)
 # ----- END Prototype Procedures -----
 
 # ----- Public Procedures ------------
-proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68; autoEnable: bool=false): Ds1307 = #ver06.1 aggiunto auto enable per partenza con dati.
+proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68; autoEnable: bool=false): Ds1307 =
   result = Ds1307(blokk: blok, ds1307addr: addrDc.I2cAddress)
   result.readRegisters(0x00, 7)
   if (result.rawArrayData[0] and 0x80) == 0x80 and autoEnable == true:
@@ -85,7 +85,7 @@ proc getTime*(self: var Ds1307): string = #gettime() riscritta ver0.4.2 da la st
     hours = self.bcdToUint8(self.rawArrayData[3] and 0x1F)
     result = fmt "{hours:02}:{minutes:02}:{seconds:02} {self.getPmAm()}" #<-- evitare questa chiamta a procedura se possibie
     
-proc getDate*(self: var Ds1307): string =
+proc getDate*(self: var Ds1307; showDay: bool=true): string = #ver0.6.2 aggiunto se vedere il giorno o no.
   #echo("Prendo il SOLO la data...")
   self.readRegisters(0x03, 4) #legge dal4 registro (0x03) e tuti i seguenti 3.
   let
@@ -93,7 +93,10 @@ proc getDate*(self: var Ds1307): string =
     date = self.bcdToUint8(self.rawArrayData[5])
     month = self.bcdToUint8(self.rawArrayData[6])
     year = self.bcdToUint8(self.rawArrayData[7])
-  result = fmt "{day:02}  {date:02}/{month:02}/{year:02}"
+  if showDay == true:
+    result = fmt "{day:02}  {date:02}/{month:02}/{year:02}"
+  else:
+    result = fmt "{date:02}/{month:02}/{year:02}"
 
 proc getSeconds*(self: var Ds1307): uint8 = #ritorna i secondi (numerico) ver0.2.0.
   self.readRegisters(0x00, 1) #legge il primo registro 0x00 e solo quello (1).
@@ -178,13 +181,21 @@ proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1
   if dw == true:
     self.writeData()
 
-proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false) = #prende uan stringa in formato data (dd-mm-yyyy).
+proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false) = #prende uan stringa in formato data (yyyy-mm-dd).
   let 
     dateSplit = date.split("-")
     year = uint8(parseint(dateSplit[0][2..3]))
     month = uint8(parseInt(dateSplit[1]))
     monthDay = uint8(parseInt(dateSplit[2]))
   self.setDate(weekDay, monthDay, month, year, dw)
+
+proc setTimeData*(self: var Ds1307; str: string; dw: bool=false) = #setta tempo e data assieme (#hh:mm:ss#yyyy-MM-dd#dayweek#)var0.6.2
+  let splitFields = str.split("#")
+  self.setTime(splitFields[1])
+  self.setDate(splitFields[2], uint8(parseInt(splitFields[3])))
+  #self.setDate(splitFields[2], splitFields[3])
+  if dw == true:
+    self.writeData()
 
 proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false) =
   if amPm == PM: #ver060. invertiti AM <-->PM.
@@ -262,6 +273,8 @@ proc writeData(self: var Ds1307) = #scrive i dati sul dispositivo correttamente.
 
   
 when isMainModule:
+  import picostdlib
+  import picostdlib/pico/[stdio]
   stdioInitAll()
   let 
     sda = 2.Gpio
@@ -275,7 +288,7 @@ when isMainModule:
   sleepMs(1500)
   echo("Inizializzo DS1307...")
   echo(fmt"----------> Version Lib = {ds1307Ver} <----------")
-  var ds = initDs1307(blk, autoEnable=true)
+  var ds = initDs1307(blk)
   ds.setTime(11,58,12, H12, AM)
   ds.setDate(1,5,11,25)
   #ds.setTime("12:14:33")
