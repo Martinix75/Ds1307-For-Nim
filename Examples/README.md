@@ -5,7 +5,7 @@ To fill in the "Clock.nim" file which is the real program, bookstores are requir
 
 that you can find on my Github website (Martinix_75).
 
-If you want to synchronize the clock with time on your computer, use (and compile):
+If you want to synchronize the clock with time on your computer, use (and compile on your computer):
 - syncTime.nim
 
 Here you will also find the "Clock.uf2" file which is pre -filled and functional, only to be installed on your RP2040.
