@@ -3,7 +3,7 @@ import picostdlib/hardware/[i2c]
 from std/strformat import fmt
 from std/strutils import parseInt, split
 
-let ds1307Ver = "0.6.2" #sovvracarico su setTime() setDate().
+let ds1307Ver = "0.7.0" #sovvracarico su setTime() setDate().
 
 type
   Ds1307* = object #creazione oggetto (nello stack).
@@ -21,7 +21,7 @@ proc initDs1307*(blok: ptr I2cInst; addrDc: uint8=0x68; autoEnable: bool=false):
 proc isEnable*(self: Ds1307): bool
 proc getFormat*(self: var Ds1307): HFormat
 proc getTime*(self: var Ds1307): string
-proc getDate*(self: var Ds1307; showDay: bool=true): string
+proc getDate*(self: var Ds1307; showDay: bool=true; extYe: bool=false): string
 #proc getDate*(self: var Ds1307): string
 proc getSeconds*(self: var Ds1307): uint8
 proc getMinutes*(self: var Ds1307): uint8
@@ -33,9 +33,9 @@ proc getMonth*(self: var Ds1307): uint8
 proc getYear*(self: var Ds1307): uint8
 
 proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0; format: HFormat=H24; amPm:HMode=AM; dw: bool= false)
-proc setTime*(self: var Ds1307; time: string; dw: bool= false)
+proc setTimeStr*(self: var Ds1307; time: string; dw: bool= false)
 proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1; year: uint8=75; dw: bool= false)
-proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false)
+proc setDateStr*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false)
 proc setTimeData*(self: var Ds1307; str: string; dw: bool=false)
 proc setAmPm*(self: var Ds1307; amPm:HMode=AM; dw: bool= false)
 proc setFormat*(self: var Ds1307; format: HFormat=H24; dw: bool= false)
@@ -85,14 +85,15 @@ proc getTime*(self: var Ds1307): string = #gettime() riscritta ver0.4.2 da la st
     hours = self.bcdToUint8(self.rawArrayData[3] and 0x1F)
     result = fmt "{hours:02}:{minutes:02}:{seconds:02} {self.getPmAm()}" #<-- evitare questa chiamta a procedura se possibie
     
-proc getDate*(self: var Ds1307; showDay: bool=true): string = #ver0.6.2 aggiunto se vedere il giorno o no.
+proc getDate*(self: var Ds1307; showDay: bool=true; extYe: bool=false): string = #ver0.6.2 aggiunto se vedere il giorno o no.data20025/25ver070.
   #echo("Prendo il SOLO la data...")
   self.readRegisters(0x03, 4) #legge dal4 registro (0x03) e tuti i seguenti 3.
   let
     day = self.bcdToUint8(self.rawArrayData[4])
     date = self.bcdToUint8(self.rawArrayData[5])
     month = self.bcdToUint8(self.rawArrayData[6])
-    year = self.bcdToUint8(self.rawArrayData[7])
+    year = if extYe == false: uint(self.bcdToUint8(self.rawArrayData[7])) else: uint(self.bcdToUint8(self.rawArrayData[7])+2000)
+    #year = self.bcdToUint8(self.rawArrayData[7])
   if showDay == true:
     result = fmt "{day:02}  {date:02}/{month:02}/{year:02}"
   else:
@@ -160,7 +161,7 @@ proc setTime*(self: var Ds1307; hours:uint8=0; minutes:uint8=0; seconds: uint8=0
   if dw == true:
     self.writeData()
 
-proc setTime*(self: var Ds1307; time: string; dw: bool= false) = #prende una stringa in formato time (hh:mm::ss).
+proc setTimeStr*(self: var Ds1307; time: string; dw: bool= false) = #prende una stringa in formato time (hh:mm::ss).
   var amPm: Hmode
   let
     timeSplit = time.split(":")
@@ -181,7 +182,7 @@ proc setDate*(self: var Ds1307; weekDay:uint8=1; monthDay:uint8=1; month:uint8=1
   if dw == true:
     self.writeData()
 
-proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false) = #prende uan stringa in formato data (yyyy-mm-dd).
+proc setDateStr*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false) = #prende uan stringa in formato data (yyyy-mm-dd).
   let 
     dateSplit = date.split("-")
     year = uint8(parseint(dateSplit[0][2..3]))
@@ -191,8 +192,8 @@ proc setDate*(self: var Ds1307; date: string; weekDay: uint8; dw: bool=false) = 
 
 proc setTimeData*(self: var Ds1307; str: string; dw: bool=false) = #setta tempo e data assieme (#hh:mm:ss#yyyy-MM-dd#dayweek#)var0.6.2
   let splitFields = str.split("#")
-  self.setTime(splitFields[1])
-  self.setDate(splitFields[2], uint8(parseInt(splitFields[3])))
+  self.setTimeStr(splitFields[1])
+  self.setDateStr(splitFields[2], uint8(parseInt(splitFields[3])))
   #self.setDate(splitFields[2], splitFields[3])
   if dw == true:
     self.writeData()
