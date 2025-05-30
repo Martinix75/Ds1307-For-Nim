@@ -11,7 +11,7 @@ type
     Lun=0, Mar , Mer, Gio, Ven, Sab, Dom
   
 #test ds1307 + dislapy 
-let timerVer = "0.3.0"
+let timerVer = "0.3.1"
 DefaultLedPin.init()
 DefaultLedPin.setDir(Out)
 stdioInitAll()
@@ -19,8 +19,8 @@ let
   sda = 2.Gpio
   scl = 3.Gpio
   blk = i2c1
-  datax = "27-05-30"
-  timex = "7:36:00"
+  datax = "2025-05-27"
+  timex = "1:11:11"
 
 discard init(blk, 100_000)
 sda.setFunction(I2C); sda.pullUp()
@@ -29,14 +29,14 @@ sleepMs(1500)
 var ds = initDs1307(blk)
 var lcd = newDisplay(i2c=i2c1, lcdAdd=0x27.uint8, numLines=2, numColum=16)
 var usb = PicoUsb()
-lcd.centerString("OROLOGIO NIM")
+lcd.centerString("Nim2040 WATCH")
 lcd.moveto(0,1)
 lcd.centerString(fmt "Ver: {timerVer}")
 
 sleepMs(1500)
 if ds.isEnable() == false:
-  ds.setTime(timex)
-  ds.setDate("2025-05-27", 2)
+  ds.setTimeStr(timex)
+  ds.setDateStr(datax, 2)
   ds.setValues()
   ds.setEnable(true)
 while true:
@@ -51,5 +51,5 @@ while true:
   lcd.centerString(fmt"{ds.getTime()}")
   lcd.moveto(0,1)
   let dname = Days(ds.getDay())
-  lcd.centerString(fmt"{dname} {ds.getDate(false)}")
+  lcd.centerString(fmt"{dname} {ds.getDate(showDay=false, extYe=true)}")
   sleepMs(500)
